@@ -1,0 +1,7 @@
+description = 'orchestrator-service'
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation project(':table-service')
+    implementation project(':payment-service')
+}

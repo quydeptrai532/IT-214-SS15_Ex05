@@ -1,0 +1,12 @@
+server:
+  port: 8201
+spring:
+  application:
+    name: table-service
+saga:
+  table:
+    hold-timeout-ms: 300000
+    auto-release-interval-ms: 300000
+logging:
+  level:
+    com.example: INFO

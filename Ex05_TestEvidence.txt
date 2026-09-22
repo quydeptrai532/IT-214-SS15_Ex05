@@ -1,0 +1,129 @@
+=== KET QUA CHAY TEST - Session15 / Bai tap 5 ===
+Du an        : table-orchestrator-state-machine (Gradle multi-module)
+Module test  : orchestrator-service
+Test class   : com.example.orchestrator.TableBookingSagaTest
+Len            : 7 tests | failures=0 | errors=0 | skipped=0
+Moi truong   : JDK 17.0.18 | Gradle 9.5.1 | Spring Boot 4.1.1
+Lenh chay    : gradlew test
+Ket qua       : BUILD SUCCESSFUL in 19s
+
+Cach kiem chung: test gan mot ListAppender vao root logger de bat LOG THAT cua moi thanh phan
+(Orchestrator, TableService, PaymentService, RefundActivity, Transaction, BookingService)
+theo dung thu tu phat sinh, roi assert containsExactly -> khong the "gia lap" ket qua.
+
+
+--- DOI CHIEU VOI "KET QUA MONG MUON" TRONG DE BAI (du lieu FAILED_ALREADY_TAKEN) ---
+
+>>> [KB1 FAILED_ALREADY_TAKEN] finalState=CANCELLED | tableStatus=AVAILABLE | bookingStatus=CANCELLED | so but toan=2
+        [Orchestrator] State: INITIATED -> Event: RESERVE_TABLE -> New State: TABLE_RESERVING
+        [TableService] Table B7: AVAILABLE -> RESERVED (Semantic Lock acquired)
+        [TableService] Table B7 reserved for booking REST-2026-101
+        [Orchestrator] State: TABLE_RESERVING -> Event: TABLE_RESERVED -> New State: PAYMENT_PENDING
+        [PaymentService] Payment of 500000 VND processed for booking REST-2026-101
+        [Orchestrator] State: PAYMENT_PENDING -> Event: PAYMENT_SUCCESS -> New State: PAYMENT_COMPLETED
+        [Orchestrator] State: PAYMENT_COMPLETED -> Event: CONFIRM_BOOKING -> New State: BOOKING_CONFIRMING
+        [TableService] ERROR: Table B7 is already taken by another booking!
+        [Orchestrator] Table reservation failed for B7 (Already taken).
+        [Orchestrator] State: BOOKING_CONFIRMING -> Event: TABLE_UNAVAILABLE -> New State: CANCELLED
+        [Orchestrator] Initiating Compensation: Calling refundPayment for booking REST-2026-101...
+        [RefundActivity] Refund of 500000 VND processed for booking REST-2026-101.
+        [Transaction] Created REFUND record: +500000 VND for booking REST-2026-101 (Audit Trail)
+        [TableService] Table B7: RESERVED -> AVAILABLE (Semantic Lock released)
+        [BookingService] Booking REST-2026-101 updated to CANCELLED.
+        [Final State] Table B7 is now AVAILABLE (semantic lock released).
+
+  => 16/16 dong log trung khop tung ky tu va dung thu tu voi Expected Output cua de bai.
+
+
+--- KB2: AUDIT TRAIL - KHONG XOA BAN GHI CU, TAO BAN GHI BU ---
+
+>>> [KB2 AUDIT TRAIL] so but toan = 2
+        PAYMENT -500000 VND status=PROCESSED booking=REST-2026-101
+        REFUND  +500000 VND status=PROCESSED booking=REST-2026-101
+
+  => Sau khi hoan tien, so cai co DUNG 2 but toan: ban ghi PAYMENT cu VAN CON NGUYEN,
+     them mot ban ghi REFUND (ghi co). Tong doi ung = 0.
+     TransactionRepository la append-only: KHONG co method update/delete nao ton tai.
+
+
+--- KB3: HAPPY PATH (khong co loi) ---
+
+>>> [KB3 HAPPY PATH] finalState=BOOKING_CONFIRMED | tableStatus=BOOKED | so but toan=1
+        [Orchestrator] State: INITIATED -> Event: RESERVE_TABLE -> New State: TABLE_RESERVING
+        [TableService] Table B7: AVAILABLE -> RESERVED (Semantic Lock acquired)
+        [TableService] Table B7 reserved for booking REST-2026-101
+        [Orchestrator] State: TABLE_RESERVING -> Event: TABLE_RESERVED -> New State: PAYMENT_PENDING
+        [PaymentService] Payment of 500000 VND processed for booking REST-2026-101
+        [Orchestrator] State: PAYMENT_PENDING -> Event: PAYMENT_SUCCESS -> New State: PAYMENT_COMPLETED
+        [Orchestrator] State: PAYMENT_COMPLETED -> Event: CONFIRM_BOOKING -> New State: BOOKING_CONFIRMING
+        [TableService] Table B7: RESERVED -> BOOKED (booking REST-2026-101 confirmed)
+        [Orchestrator] State: BOOKING_CONFIRMING -> Event: BOOKING_SUCCESS -> New State: BOOKING_CONFIRMED
+        [BookingService] Booking REST-2026-101 updated to CONFIRMED.
+        [Final State] Booking REST-2026-101 is CONFIRMED. Table B7 is now BOOKED.
+
+  => Ban chi chuyen AVAILABLE -> RESERVED -> BOOKED. Khong co REFUND nao duoc tao.
+
+
+--- KB4: THANH TOAN THAT BAI ---
+
+>>> [KB4 PAYMENT FAILED] finalState=CANCELLED | tableStatus=AVAILABLE | so but toan=0
+        [Orchestrator] State: INITIATED -> Event: RESERVE_TABLE -> New State: TABLE_RESERVING
+        [TableService] Table B7: AVAILABLE -> RESERVED (Semantic Lock acquired)
+        [TableService] Table B7 reserved for booking REST-2026-101
+        [Orchestrator] State: TABLE_RESERVING -> Event: TABLE_RESERVED -> New State: PAYMENT_PENDING
+        [PaymentService] Payment declined for booking REST-2026-101 (insufficient funds)
+        [Orchestrator] Payment failed for booking REST-2026-101 (Declined).
+        [Orchestrator] State: PAYMENT_PENDING -> Event: PAYMENT_FAILED -> New State: CANCELLED
+        [TableService] Table B7: RESERVED -> AVAILABLE (Semantic Lock released)
+        [BookingService] Booking REST-2026-101 updated to CANCELLED.
+        [Final State] Table B7 is now AVAILABLE (semantic lock released).
+
+  => Chua tru duoc dong nao -> bu tru KHONG hoan tien (so cai rong), chi tra ban.
+     Chung minh bu tru nam dung pham vi: chi bu nhung gi da lam.
+
+
+--- KB5: BAN DANG BI KHACH KHAC GIU ---
+
+>>> [KB5 BAN DA BI GIU] finalState=CANCELLED | tableStatus=BOOKED
+        [Orchestrator] State: INITIATED -> Event: RESERVE_TABLE -> New State: TABLE_RESERVING
+        [TableService] ERROR: Table B8 is already taken by another booking!
+        [Orchestrator] Table reservation failed for B8 (Already taken).
+        [Orchestrator] State: TABLE_RESERVING -> Event: TABLE_UNAVAILABLE -> New State: CANCELLED
+        [BookingService] Booking REST-2026-102 updated to CANCELLED.
+        [Final State] Table B8 is BOOKED (this booking never held the lock).
+
+  => Khach thu hai KHONG cuop duoc ban cua khach thu nhat (khong dirty read, khong ban trung).
+     Saga nay chua he giu duoc lock nen bu tru khong dung tới ban cua nguoi khac.
+
+
+--- KB6: SEMANTIC LOCK + THONG BAO CHO UI ---
+
+>>> [KB6 SEMANTIC LOCK] B7 status=RESERVED | heldBy=REST-2026-101
+    GET /api/tables/B7 -> { "tableNumber": "B7", "status": "RESERVED",
+                            "message": "Bàn đang được giữ",
+                            "heldBy": "REST-2026-101", "heldSeconds": 0 }
+
+
+--- KB7: TU DONG GIAI PHONG BAN QUA HAN (timeout 5 phut) ---
+
+>>> [KB7 AUTO RELEASE] B7 status=AVAILABLE
+        [TableService] Table B7: AVAILABLE -> RESERVED (Semantic Lock acquired)
+        [TableService] Table B7 reserved for booking REST-2026-101
+        [TableService] Table B7: RESERVED -> AVAILABLE (Semantic Lock released)
+        [TableService] Auto-release expired reservation for table B7
+
+  => Dat hold-timeout-ms = 0 de mo phong da qua 5 phut; job @Scheduled quet va tu tra ban,
+     tranh truong hop khach bo ngang lam ban bi khoa vinh vien.
+
+
+--- TONG HOP CHAY TEST ---
+
+TableBookingSagaTest > thanhToanThatBai_thiNhaSemanticLockVaLedgerKhongCoRefund() PASSED
+TableBookingSagaTest > banDangBiGiuBoiNguoiKhac_thiKhachKhacKhongDatDuoc() PASSED
+TableBookingSagaTest > autoRelease_quaThoiGianGiuThiTuDongTraBan() PASSED
+TableBookingSagaTest > happyPath_datBanThanhCong() PASSED
+TableBookingSagaTest > refundTaoBanGhiMoi_khongXoaBanGhiPayment() PASSED
+TableBookingSagaTest > semanticLock_uiHienThiBanDangDuocGiu() PASSED
+TableBookingSagaTest > failedAlreadyTaken_kichHoatCompensationVaGhiNhanRefund() PASSED
+
+BUILD SUCCESSFUL in 19s

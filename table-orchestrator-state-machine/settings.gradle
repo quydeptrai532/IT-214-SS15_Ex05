@@ -1,0 +1,5 @@
+rootProject.name = 'table-orchestrator-state-machine'
+
+include 'orchestrator-service'
+include 'table-service'
+include 'payment-service'

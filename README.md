@@ -104,3 +104,4 @@ curl http://localhost:8200/api/payments/ledger/REST-2026-101   # doi soat so cai
 > **Ghi chú phạm vi:** sổ cái và trạng thái bàn lưu **in-memory**; gọi service **in-process** qua lớp
 > `*OrchestrationService` (điểm nối đã tách sẵn). Production: đổi `TransactionRepository` sang JPA với bảng
 > chỉ-được-thêm, thay thân 2 lớp `*OrchestrationService` bằng `RestClient`, thay `synchronized` bằng khoá DB.
+a
